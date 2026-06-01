@@ -294,6 +294,7 @@ Vitest for both E2E and unit tests. Config in `vitest.config.ts` at the root. Te
 src/tests/
   e2e/              # Full-stack flows against a running server
   unit/             # Pure-function tests
+  component/        # React component tests (FE services only)
 ```
 
 ### End-to-end tests
@@ -302,12 +303,44 @@ src/tests/
 - Make real HTTP requests against that instance — no mocking of internal modules.
 - Assert on HTTP status codes, response shape, and observable side effects (database state, emitted logs, metrics).
 - Cover: the golden path for every feature, all documented error codes, and any flow that touches auth or payments.
+- For every E2E test that makes a request, capture `stdout` from the test server and assert: (a) a structured log line with the correct `level` was emitted, (b) no secret or PII appears in the output.
 
 ### Unit tests
 
 - Test exported pure functions with representative inputs, edge cases, and error paths.
 - Any regex, string-parsing, or data-transformation logic gets its own unit test file — these are the cases where exhaustive variation is practical and valuable.
+- Input validation schemas and functions must have unit tests covering valid inputs, missing required fields, and invalid types.
+- Error-class-to-HTTP-status-code mapping must be unit-tested — verify that each known error class resolves to the correct status code.
 - Do not unit-test framework glue or trivial wrappers.
+
+### Frontend component tests
+
+Frontend services add a `src/tests/component/` layer using Vitest + `@testing-library/react`:
+
+- Test any component that owns non-trivial state, conditional rendering, or user-interaction logic.
+- Test custom hooks in isolation using `renderHook`.
+- Do not test presentational leaf components that have no logic.
+- Run `axe` (via `vitest-axe` or `@axe-core/react`) on every component test. A failing accessibility audit is a failing test — treat it as a blocking error, not a warning.
+
+### Contract tests
+
+Any type exported from `src/shared/types.ts` that crosses a service boundary (i.e. is consumed by another service's HTTP client) is a contract. Breaking contract changes require:
+
+1. An E2E test in the consuming service that exercises the changed shape before the PR is merged in the producing service.
+2. A comment in the PR referencing the consuming service and the test added.
+
+Where multiple services share a high-churn API, use consumer-driven contract tests (e.g. [Pact](https://pact.io)) and run them in CI before the provider can merge.
+
+### Database migration tests
+
+Before every PR that adds or modifies a migration file in `db/migrations/`:
+
+1. Spin up an ephemeral PostgreSQL container in CI.
+2. Run all migrations from scratch (`npm run db:migrate`).
+3. Run migrations again against the current schema to verify idempotency where applicable.
+4. Assert the resulting schema matches expected table/column definitions (`npm run db:verify`).
+
+Migration tests run as a separate CI job and must pass before the deploy step is reached.
 
 ### Test hygiene
 
@@ -317,7 +350,10 @@ src/tests/
 
 ### CI coverage gate
 
-Run `npm run test:coverage` in CI. Block merges if E2E coverage of documented API routes drops below 100% (every route must have at least one E2E test).
+Run `npm run test:coverage` in CI. Block merges if either of the following drops:
+
+- E2E coverage of documented API routes below **100%** (every route must have at least one E2E test).
+- E2E coverage of documented error codes below **100%** (every `{ error: string }` response documented in the service README must have at least one test that triggers it and asserts the correct HTTP status code and body shape).
 
 ---
 
@@ -434,6 +470,16 @@ infra/
 - Run `terraform plan` in CI on every PR touching `infra/`. Apply only after a human approves the plan output.
 - Tag every resource: `Project`, `Service`, `Environment`, `ManagedBy=terraform`.
 
+### Infrastructure testing
+
+Every PR touching `infra/` must pass all three checks before the plan is shown for approval:
+
+1. **`terraform validate`** — syntax and internal consistency.
+2. **`terraform fmt --check`** — formatting; fail the PR rather than auto-fix silently.
+3. **Conftest policy checks** — run [Conftest](https://conftest.dev) with the shared policy bundle in `infra/policies/`. Policies enforce: mandatory resource tags, no publicly-accessible S3 buckets, no security-group rules open to `0.0.0.0/0` on sensitive ports, and CPU/memory limits present on all EKS workloads.
+
+For complex reusable modules in `infra/modules/`, add module-level tests using `terraform test` (OpenTofu 1.6+ / Terraform 1.7+). Place test files in `infra/modules/<module>/tests/`.
+
 ### Drift detection
 
 Run `terraform plan` nightly. Alert the engineering Slack channel if the plan is non-empty.
@@ -516,6 +562,9 @@ Every new service must ship all of the following before its first production dep
 - [ ] Sandbox deployment path (auto-deploy on push to `dev`)
 - [ ] Production deployment path (auto-deploy on merge to `master`)
 - [ ] E2E test coverage for every documented API route
+- [ ] E2E test coverage for every documented error code (correct HTTP status + `{ error: string }` body)
+- [ ] Component tests for all stateful React components (FE services only), with `axe` accessibility assertions
+- [ ] Database migration test job in CI (ephemeral Postgres, migrate from scratch, verify schema)
 - [ ] `.env.example` with all variables documented
 - [ ] Structured logging with a distinct `CORALOGIX_APP_NAME`
 - [ ] Grafana metrics with a distinct metric prefix
