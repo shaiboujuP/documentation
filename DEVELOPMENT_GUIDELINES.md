@@ -98,33 +98,181 @@ All outbound `fetch` calls get a timeout (use `AbortSignal.timeout(ms)`). Treat 
 
 ## 5. Observability
 
-### Logging
+### 5.1 Logging with Coralogix
 
-Every service uses structured JSON logging to stdout — one JSON object per line. The schema is:
+#### Log format
+
+Every service writes structured JSON to stdout — one JSON object per line:
 
 ```json
-{ "time": "<ISO-8601>", "level": "info|warn|error|debug", "message": "<string>", ...context }
+{
+  "time": "2026-05-30T14:22:01.123Z",
+  "level": "info",
+  "message": "Subscription created",
+  "subscriptionId": "sub_abc123",
+  "userId": "usr_xyz789",
+  "durationMs": 42
+}
 ```
 
-- `logger.info` for normal milestones (request received, request complete).
-- `logger.error` for anything that caused a failure, with the error message in context.
-- `logger.debug` for high-frequency detail (individual sub-requests, cache hits) — off by default in production.
-- Never log secrets, tokens, full request bodies, or PII. Log identifiers (IDs, hashes) instead.
+- `time`: ISO-8601 with milliseconds.
+- `level`: one of `debug` | `info` | `warn` | `error`.
+- `message`: a static human-readable string — never interpolate variable data into it. Put variable data in additional fields.
+- Additional fields: camelCase, no nesting beyond one level deep.
 
-**Coralogix:** When `CORALOGIX_API_KEY` is set, logs are batched and shipped every 5 s. The application name and subsystem default to sensible values and are overridable via env vars. Every new service must set a distinct `CORALOGIX_APP_NAME`.
+#### Log levels
 
-### Metrics
+- `info` — normal milestones: service started, request received, request complete.
+- `warn` — expected failure conditions: validation errors, known business errors.
+- `error` — anything that caused an unhandled failure; include `error` (message only) and full request context.
+- `debug` — high-frequency detail (sub-requests, cache hits); **off by default in production**.
 
-Metrics are pushed to Grafana Cloud via InfluxDB line protocol every 10 s when `GRAFANA_METRICS_URL` and `GRAFANA_API_KEY` are set.
+#### What to log
 
-Standard metrics every service must emit:
-
-| Metric | Fields | Tags |
+| Event | Level | Required context fields |
 |---|---|---|
-| `<service>_request` | `count=1` | `method`, `endpoint`, `status` |
-| `<service>_<operation>` | `duration_ms` | `status`, relevant ID tag |
+| Service started | `info` | `port`, `nodeEnv` |
+| Request received | `info` | `method`, `path`, `requestId` |
+| Request completed | `info` | `method`, `path`, `status`, `durationMs`, `requestId` |
+| Validation error | `warn` | `endpoint`, `field`, `requestId` |
+| Expected business error | `warn` | `errorCode`, `requestId` |
+| Unexpected error | `error` | `error` (message only, no stack), `endpoint`, `requestId` |
+| Outbound HTTP call | `debug` | `targetService`, `method`, `url` (no query params with secrets), `status`, `durationMs` |
 
-Use the service name as the metric prefix (e.g. `scraper_`, `generator_`). Tag cardinality matters — never use a user-supplied string as a tag value without normalising it first.
+#### What never to log
+
+- Passwords, tokens, API keys, or any credential.
+- Full request or response bodies.
+- PII (email, name, phone, address) — log IDs or hashes instead.
+- Full stack traces in any field — include only `error.message`. Full stacks belong in your local debugger.
+
+#### Coralogix environment variables
+
+| Variable | Description |
+|---|---|
+| `CORALOGIX_API_KEY` | Send-Your-Data API key |
+| `CORALOGIX_APP_NAME` | Unique per service (e.g. `payments-api`). Every new service must set a distinct value. |
+| `CORALOGIX_SUBSYSTEM` | Use the environment (`sandbox` / `production`). Defaults to `NODE_ENV` if unset. |
+| `CORALOGIX_REGION` | Ingestion endpoint region (e.g. `EU2`). Defaults to `EU2`. |
+
+#### Shipping to Coralogix
+
+Batch logs and POST to the Coralogix REST API every **5 seconds**:
+
+```
+POST https://ingress.<CORALOGIX_REGION>.coralogix.com/logs/v1/singles
+Authorization: Bearer <CORALOGIX_API_KEY>
+Content-Type: application/json
+```
+
+```json
+{
+  "applicationName": "<CORALOGIX_APP_NAME>",
+  "subsystemName": "<CORALOGIX_SUBSYSTEM>",
+  "logEntries": [
+    { "timestamp": 1717027200123, "severity": 3, "text": "{...json log line...}" }
+  ]
+}
+```
+
+Severity mapping: `debug` → 1, `verbose` → 2, `info` → 3, `warn` → 4, `error` → 5, `critical` → 6.
+
+Rules:
+- If `CORALOGIX_API_KEY` is absent, write to stdout only — never throw.
+- Maximum batch: 500 entries or 1 MB, whichever comes first. Flush early when the batch limit is reached.
+- On failure (network error or non-2xx): retry once after 2 s, then drop the batch and emit a single `warn` to stdout. Never retry indefinitely or block the event loop.
+- Never log the API key or any secret in failure messages.
+
+#### Querying logs in Coralogix
+
+Use DataPrime syntax in the Coralogix Explore view:
+
+```dataprime
+# All errors for a service
+source logs | filter $l.applicationname == 'payments-api' and $l.severity >= 5
+
+# Slow requests (> 1 s)
+source logs | filter $d.durationMs > 1000 and $l.applicationname == 'payments-api'
+
+# All events for a specific request
+source logs | filter $d.requestId == 'req_abc123'
+```
+
+#### Coralogix alerts
+
+Define alert rules in the Coralogix Alerts console (export as JSON to `coralogix/alerts.json` for version control). Required alerts:
+
+- Any `error`-level log from a production service → route to `#oncall` Slack immediately.
+- More than 10 `warn`-level logs within 5 minutes from the same service → route to `#engineering` Slack.
+
+---
+
+### 5.2 Metrics with Grafana
+
+**Platform:** Grafana Cloud. Metrics are pushed using the InfluxDB line protocol over HTTPS.
+
+#### Grafana environment variables
+
+| Variable | Description |
+|---|---|
+| `GRAFANA_METRICS_URL` | Push URL from your Grafana Cloud stack (e.g. `https://influx-prod-xx.grafana.net/api/v1/push/influx/write`) |
+| `GRAFANA_API_KEY` | Grafana Cloud API key with the _MetricsPublisher_ role |
+| `GRAFANA_SERVICE_NAME` | Canonical service identifier used as the metric prefix and in dashboard labels (e.g. `payments-api`) |
+
+#### Emitting metrics
+
+Push every **10 seconds** using the InfluxDB line protocol:
+
+```
+<measurement>,<tag_key>=<tag_value> <field_key>=<field_value> <unix_timestamp_ns>
+```
+
+Example:
+
+```
+payments-api_request,method=POST,endpoint=/api/subscriptions,status=200 count=1 1717027200000000000
+```
+
+Rules:
+- **Measurement name:** `<GRAFANA_SERVICE_NAME>_<operation>`.
+- **Tags:** low-cardinality, normalised values only. `endpoint` must be a route pattern (`/api/users/:id`), never a raw request path.
+- **Fields:** numeric values only (`count`, `duration_ms`, `error_count`). Never put strings in field values.
+- Batch all pending measurements into a single HTTP `POST` per flush. On failure, log a `warn` and discard — do not queue indefinitely.
+- Gate all pushes behind a `GRAFANA_METRICS_URL` presence check so local development produces no traffic.
+
+#### Required metrics per service
+
+Every service must emit, at minimum:
+
+| Measurement | Fields | Tags |
+|---|---|---|
+| `<service>_request` | `count=1` | `method`, `endpoint` (route pattern), `status` (HTTP code) |
+| `<service>_request_duration` | `duration_ms` | `method`, `endpoint`, `status` |
+| `<service>_error` | `count=1` | `endpoint`, `error_type` |
+
+For services with background workers or queue processors, also emit:
+
+| Measurement | Fields | Tags |
+|---|---|---|
+| `<service>_job` | `count=1`, `duration_ms` | `job_name`, `status` (`success`/`failure`) |
+
+#### Dashboards
+
+- Every service ships a Grafana dashboard definition as JSON in `grafana/dashboard.json`.
+- Required panels: request rate, error rate, p50/p95/p99 latency, and any service-specific SLIs.
+- Use the `$service` template variable so dashboards can be filtered by instance.
+- Import the dashboard to both sandbox and production Grafana orgs during service onboarding.
+
+#### Alerting
+
+Define alert rules in `grafana/alerts.yaml` using Grafana's provisioning format. Required alerts:
+
+- Error rate > 5% over a 5-minute window → severity `warning`.
+- Error rate > 20% over a 2-minute window → severity `critical`.
+- p99 latency > 2 000 ms over a 5-minute window → severity `warning`.
+- No metrics received for > 2 minutes → severity `critical` (dead service detection).
+
+All critical alerts must route to the `#oncall` Slack channel via the shared Grafana notification policy.
 
 ---
 
