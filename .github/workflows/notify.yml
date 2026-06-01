@@ -1,0 +1,31 @@
+name: Slack Notify
+
+on:
+  push:
+    branches: [main, dev]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set environment label
+        id: env
+        run: |
+          if [ "${{ github.ref_name }}" = "main" ]; then
+            echo "label=prod" >> $GITHUB_OUTPUT
+            echo "emoji=:white_check_mark:" >> $GITHUB_OUTPUT
+          else
+            echo "label=sandbox" >> $GITHUB_OUTPUT
+            echo "emoji=:building_construction:" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Notify #deployments
+        uses: slackapi/slack-github-action@v1
+        with:
+          payload: |
+            {
+              "text": "${{ steps.env.outputs.emoji }} *${{ github.event.repository.name }}* → `${{ github.ref_name }}` (${{ steps.env.outputs.label }})\nBy: ${{ github.actor }} | <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
