@@ -11,6 +11,9 @@ The goal is to keep V1 focused enough to build quickly while still creating a re
 - App name: Bitewise.
 - Auth: Google and Apple ID only.
 - Web billing: Stripe Billing.
+- Mobile purchase options:
+  - Option A: in-app purchase through App Store / Google Play.
+  - Option B: link out to Stripe web checkout where store rules, region, and programme eligibility allow it.
 - Hosting: AWS.
 - Photo retention: delete meal photos 30 days after processing.
 - V1 does not include a dashboard.
@@ -28,7 +31,7 @@ Launch the smallest useful version of Bitewise:
 
 1. Sign in.
 2. Complete onboarding.
-3. Start a Stripe trial.
+3. Start a trial through in-app purchase or an allowed web checkout link-out.
 4. Add a meal from a photo.
 5. Confirm or edit the estimate.
 6. See today's calories and meals.
@@ -105,9 +108,11 @@ Offer:
 - Then $10/month.
 - Cancel anytime.
 
-Billing provider:
+Billing providers:
 
 - Stripe Billing on web.
+- In-app purchase for iOS/Android store builds.
+- Web checkout link-out only where compliant.
 
 #### 5. Today View
 
@@ -368,6 +373,8 @@ Build:
 - Checkout session creation.
 - Customer portal session creation.
 - Stripe webhook handler.
+- Apple/Google purchase verification interface.
+- Provider-agnostic entitlement sync.
 - Subscription state mapping.
 - Trial state sync.
 
@@ -388,6 +395,8 @@ Acceptance criteria:
 - Trial starts correctly.
 - Subscription state syncs into API/database.
 - Canceled/expired users cannot log new meals.
+- App Store / Google Play purchase state can unlock the same `premium` entitlement.
+- Web link-out is feature-flagged and region/programme gated.
 
 ## Module 5: AWS Infrastructure
 
@@ -471,10 +480,11 @@ flowchart TD
     Mobile["mobile/\nExpo React Native\nTypeScript"]
     Web["web/\nNext.js\nTypeScript"]
     API["api/\nNode.js API\nTypeScript"]
-    Billing["billing/\nStripe Billing\nTypeScript"]
+    Billing["billing/\nProvider Entitlements\nTypeScript"]
+    Stores["App Store / Google Play\nIn-App Purchase"]
 
     Auth["Google + Apple ID Auth"]
-    Stripe["Stripe Billing"]
+    Stripe["Stripe Billing\nWeb Checkout"]
     DB["AWS RDS Postgres"]
     S3["AWS S3\nMeal Photos"]
     Cleanup["EventBridge + Lambda\n30-Day Photo Deletion"]
@@ -492,6 +502,8 @@ flowchart TD
     Web --> API
 
     Web --> Billing
+    Mobile --> Stores
+    Stores --> Billing
     Billing --> Stripe
     Stripe --> Billing
     Billing --> API
@@ -544,6 +556,8 @@ flowchart TD
 - Stripe Checkout.
 - Stripe Customer Portal.
 - Stripe webhooks.
+- Apple/Google purchase verification adapter.
+- Provider-agnostic entitlement mapping.
 
 ## AWS
 

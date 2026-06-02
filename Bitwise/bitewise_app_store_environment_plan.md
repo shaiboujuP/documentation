@@ -13,8 +13,11 @@ Apple's current App Review Guidelines say that apps unlocking features or functi
 Recommended V1 decision:
 
 - Use Stripe Billing on web.
-- Do not place a Stripe checkout link inside the iOS app until the App Store payment path is resolved.
-- For safest App Store approval, add Apple In-App Purchase for iOS subscriptions or use a compliant account-access-only app flow.
+- Build the mobile entitlement layer to support two purchase paths:
+  - Option A: in-app purchase.
+  - Option B: link out to web checkout where allowed.
+- For safest App Store approval, support Apple In-App Purchase for iOS subscriptions.
+- Keep link-out behind a remote feature flag and region/programme gate.
 
 Official references:
 
@@ -186,17 +189,39 @@ Web Stripe:
 - Webhook endpoint.
 - Webhook signing secret.
 
-iOS subscription decision:
+iOS/mobile subscription options:
 
-- Option A, safest: implement Apple In-App Purchase for iOS.
-- Option B: allow login to accounts purchased on web, but do not advertise or link web checkout inside the iOS app.
-- Option C: apply for an external purchase entitlement if Bitewise qualifies.
+Option A, in-app purchase:
+
+- Apple In-App Purchase for iOS.
+- Google Play Billing for Android.
+- Native purchase sheet.
+- Store-managed trial/subscription lifecycle.
+- Server-side receipt/transaction verification.
+
+Option B, link out to web:
+
+- Stripe Checkout on web.
+- External link shown only where allowed.
+- Remote feature flag controls visibility.
+- Region/programme eligibility must be enforced.
+- Link-out copy must be store-compliant.
+
+Option C, account access only:
+
+- Mobile app allows login to an existing paid account.
+- No in-app purchase button.
+- No checkout link.
+- Lower conversion, lower review risk than unsafe link-out.
 
 Recommended path:
 
 - Build Stripe web billing now.
-- Plan Apple IAP integration before App Store submission.
-- Keep entitlement model provider-agnostic so Stripe and Apple can both unlock the same `premium` access.
+- Build provider-agnostic entitlements now.
+- Implement Apple IAP before App Store submission if selling from inside iOS.
+- Implement Google Play Billing before Google Play production if selling from inside Android.
+- Keep link-out disabled by default until eligibility is confirmed.
+- Stripe, Apple, and Google should all unlock the same `premium` access.
 
 ## AWS Environment
 
@@ -319,4 +344,3 @@ Week 5:
 
 - Final production build.
 - Submit for App Store review.
-
