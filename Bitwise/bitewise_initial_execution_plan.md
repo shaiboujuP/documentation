@@ -27,6 +27,9 @@ Auth:
 Billing:
 
 - Stripe Billing on the web.
+- Mobile billing supports two planned paths:
+  - Option A: in-app purchase through App Store / Google Play.
+  - Option B: link out to Stripe web checkout where store rules, region, and programme eligibility allow it.
 - 14-day free trial.
 - $10/month after trial.
 
@@ -87,9 +90,19 @@ Flow:
 
 1. User completes onboarding.
 2. User sees paywall.
-3. User starts 14-day Stripe trial.
-4. Backend stores subscription state.
-5. User receives access to meal logging.
+3. User chooses an available purchase path.
+4. User starts a 14-day trial.
+5. Backend stores subscription state.
+6. User receives access to meal logging.
+
+Purchase paths:
+
+- In-app purchase: safest default for iOS/Android store builds.
+- Web checkout link-out: Stripe Billing where store rules and regional eligibility allow it.
+
+Implementation rule:
+
+- Keep the entitlement model provider-agnostic. Stripe, Apple, and Google should all map to the same app access state.
 
 ### Today View
 
@@ -272,7 +285,8 @@ Payment flow:
 
 - Keep billing isolated in `billing/`.
 - Validate Stripe webhook signatures.
-- Treat Stripe as the payment source of truth.
+- Treat each payment provider as the source of truth for its own transaction.
+- Normalize Stripe, Apple, and Google into one internal `premium` entitlement.
 
 AWS complexity:
 
@@ -294,7 +308,7 @@ The first vertical slice should be:
 1. Google or Apple sign-in.
 2. Onboarding.
 3. Daily calorie target.
-4. Stripe trial checkout.
+4. Trial checkout through in-app purchase or allowed web link-out.
 5. Add a meal with mocked AI.
 6. Confirm meal.
 7. Today view updates.

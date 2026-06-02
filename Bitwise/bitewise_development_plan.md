@@ -96,7 +96,7 @@ Journey:
 1. Mobile user signs in with mocked auth.
 2. User completes onboarding.
 3. User receives a calorie target.
-4. User starts mocked subscription/trial.
+4. User starts mocked subscription/trial using either an in-app-purchase path or web-checkout link-out path.
 5. User adds mocked meal estimate.
 6. User confirms meal.
 7. Today view updates.
@@ -135,11 +135,16 @@ Acceptance criteria:
 - API rejects unauthenticated requests.
 - Same user identity works across mobile and web.
 
-## Phase 3: Billing With Stripe
+## Phase 3: Billing and Entitlements
 
 Goal:
 
-Enable the 14-day trial and $10/month subscription on web.
+Enable the 14-day trial and $10/month subscription with a provider-agnostic entitlement layer.
+
+Supported paths:
+
+- Option A: in-app purchase for iOS/Android store builds.
+- Option B: Stripe web checkout link-out where allowed by store rules, region, and programme eligibility.
 
 Tasks:
 
@@ -148,8 +153,14 @@ Tasks:
 - Create customer portal endpoint.
 - Add webhook handler.
 - Verify Stripe webhook signatures.
+- Define Apple/Google purchase verification adapter interfaces.
+- Add provider field to subscription records.
 - Map Stripe state to app subscription state.
 - Gate meal logging by subscription entitlement.
+- Add feature flags:
+  - `ENABLE_IAP_PURCHASE`
+  - `ENABLE_WEB_CHECKOUT_LINKOUT`
+  - `WEB_CHECKOUT_ALLOWED_REGIONS`
 
 Subscription states:
 
@@ -168,11 +179,13 @@ Acceptance criteria:
 - Webhook updates backend entitlement state.
 - Expired/canceled users cannot create new meals.
 
-Important iOS note:
+Important store note:
 
 - Stripe web billing is the confirmed web path.
-- For App Store approval, Bitewise may still need Apple In-App Purchase for in-app subscription purchase unless the app qualifies for an external purchase entitlement.
-- Do not put an in-app link to Stripe checkout into the iOS app until this is resolved.
+- In-app purchase is the safest default for store-distributed mobile apps.
+- Link-out to web checkout is region/programme dependent.
+- Do not enable link-out globally without legal/store-policy review.
+- Do not show both paths in a way that violates Apple or Google programme rules.
 
 ## Phase 4: API and Database
 
@@ -349,6 +362,8 @@ Agent 5: Billing
 - Checkout.
 - Portal.
 - Webhooks.
+- In-app purchase verification interface.
+- Link-out feature flags.
 - Entitlement sync.
 
 Agent 6: AI and Storage
@@ -373,4 +388,3 @@ Agent 8: QA and Release
 - Billing tests.
 - Auth tests.
 - AI estimate tests.
-
