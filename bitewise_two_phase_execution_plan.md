@@ -258,7 +258,7 @@ bitewise/
 | Folder | Primary language | Framework/runtime | Main responsibility |
 | --- | --- | --- | --- |
 | `mobile/` | TypeScript | Expo React Native | iOS/Android app, auth, onboarding, photo capture, meal review, Today view |
-| `web/` | TypeScript | Next.js | Landing page, login entry, Stripe checkout/account access |
+| `web/` | TypeScript | React 19 with Vite | Landing page, login entry, Stripe checkout/account access |
 | `api/` | TypeScript | Node.js on AWS | User data, daily plan, meals, AI estimation, AWS storage, entitlement checks |
 | `billing/` | TypeScript | Node.js on AWS | Stripe checkout, portal, webhooks, subscription state sync |
 
@@ -522,7 +522,8 @@ flowchart TD
 ## Web
 
 - TypeScript.
-- Next.js.
+- React 19.
+- Vite.
 - React.
 - Stripe.js.
 
@@ -740,4 +741,3 @@ Deliverable:
 8. Build the first mocked vertical slice.
 9. Add Stripe Billing.
 10. Add real photo upload and AI estimation.
-

@@ -152,7 +152,7 @@ bitewise/
 | Folder | Primary language | Runtime/framework | Responsibility |
 | --- | --- | --- | --- |
 | `mobile/` | TypeScript | Expo React Native | iOS and Android app |
-| `web/` | TypeScript | Next.js | Landing, login, onboarding support, Stripe checkout |
+| `web/` | TypeScript | React 19 with Vite | Landing, login, onboarding support, Stripe checkout |
 | `api/` | TypeScript | Node.js on AWS | App API, meal logic, AI estimation, storage coordination |
 | `billing/` | TypeScript | Node.js on AWS | Stripe checkout, customer portal, webhooks, entitlement sync |
 
@@ -300,4 +300,3 @@ The first vertical slice should be:
 7. Today view updates.
 
 After that works end to end, replace mocked AI with real photo estimation.
-
