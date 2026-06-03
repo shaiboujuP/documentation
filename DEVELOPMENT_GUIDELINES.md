@@ -574,4 +574,246 @@ Every new service must ship all of the following before its first production dep
 
 ---
 
-_Last updated: 2026-05-30. To propose a change, open a PR against this file and request review from at least two team members._
+## 14. Opening a New Repository
+
+Follow these steps in order every time a new service is created. Do not skip steps — each one is a prerequisite for the next.
+
+### Step 1 — Create the GitHub repo
+
+```bash
+gh repo create shaiboujuP/<service-name> --private --description "<short description>"
+gh repo clone shaiboujuP/<service-name> ~/git/<service-name>
+cd ~/git/<service-name>
+```
+
+Use a short, lowercase, hyphenated name (e.g. `landing-generator`, `auth-service`).
+
+### Step 2 — Create and push the required branches
+
+```bash
+git checkout -b dev
+git push -u origin dev
+git checkout -b master
+git push -u origin master
+gh repo edit --default-branch master
+```
+
+Both branches must exist before branch protection rules can be applied.
+
+### Step 3 — Set branch protection rules
+
+Go to **GitHub → repo → Settings → Branches** and add the following rules:
+
+**For `master`:**
+- ✅ Require a pull request before merging
+- ✅ Require at least 1 approval
+- ✅ Require status checks to pass (CI pipeline)
+- ✅ Do not allow direct pushes
+
+**For `dev`:**
+- ✅ Require status checks to pass (CI pipeline)
+
+### Step 4 — Create the folder structure
+
+```bash
+mkdir -p src/server src/client src/shared src/tests/e2e src/tests/unit
+mkdir -p k8s .github/workflows db/migrations
+touch Dockerfile .env.example package.json tsconfig.json vitest.config.ts
+```
+
+### Step 5 — Wire up the health check endpoint
+
+Every service must have this route before anything else. Kubernetes liveness and readiness probes depend on it.
+
+```ts
+// src/server/index.ts
+if (request.url === "/healthz") {
+  sendJson(response, 200, { status: "ok" });
+  return;
+}
+```
+
+### Step 6 — Write the Dockerfile
+
+```dockerfile
+FROM node:22-alpine AS builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM node:22-alpine
+WORKDIR /app
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/node_modules ./node_modules
+COPY package.json ./
+EXPOSE 4173
+CMD ["node", "dist/server/index.js"]
+```
+
+### Step 7 — Write Kubernetes manifests
+
+Create `k8s/deployment.yaml`:
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: <service-name>
+  namespace: <service-name>
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: <service-name>
+  template:
+    metadata:
+      labels:
+        app: <service-name>
+    spec:
+      terminationGracePeriodSeconds: 30
+      containers:
+        - name: <service-name>
+          image: <ecr-url>/<service-name>:<git-sha>
+          ports:
+            - containerPort: 4173
+          resources:
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 4173
+            initialDelaySeconds: 10
+            periodSeconds: 15
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 4173
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          envFrom:
+            - configMapRef:
+                name: <service-name>-config
+            - secretRef:
+                name: <service-name>-secrets
+```
+
+### Step 8 — Write the CI/CD pipeline
+
+Create `.github/workflows/ci.yml`:
+
+```yaml
+name: CI/CD
+
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:coverage
+      - run: npm audit --audit-level=high
+      - name: Build Docker image
+        run: docker build -t ${{ github.event.repository.name }}:${{ github.sha }} .
+
+  deploy-sandbox:
+    needs: ci
+    if: github.ref == 'refs/heads/dev'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Push to ECR
+        run: |
+          aws ecr get-login-password | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          docker build -t ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }}
+      - name: Deploy to sandbox
+        run: |
+          aws eks update-kubeconfig --name sandbox-cluster --region ${{ secrets.AWS_REGION }}
+          kubectl set image deployment/<service-name> <service-name>=${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }} -n <service-name>
+          kubectl rollout status deployment/<service-name> -n <service-name> --timeout=120s
+      - name: Smoke test
+        run: curl -f https://<service>.sandbox.yourdomain.com/healthz
+
+  deploy-production:
+    needs: ci
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Push to ECR
+        run: |
+          aws ecr get-login-password | docker login --username AWS --password-stdin ${{ secrets.ECR_REGISTRY }}
+          docker build -t ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }} .
+          docker push ${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }}
+      - name: Deploy to production
+        run: |
+          aws eks update-kubeconfig --name production-cluster --region ${{ secrets.AWS_REGION }}
+          kubectl set image deployment/<service-name> <service-name>=${{ secrets.ECR_REGISTRY }}/${{ github.event.repository.name }}:${{ github.sha }} -n <service-name>
+          kubectl rollout status deployment/<service-name> -n <service-name> --timeout=180s
+      - name: Smoke test
+        run: curl -f https://<service>.yourdomain.com/healthz
+      - name: Notify Slack
+        run: |
+          curl -X POST ${{ secrets.SLACK_WEBHOOK }} \
+          -d '{"text":"✅ Deployed <service-name> `${{ github.sha }}` to production"}'
+```
+
+### Step 9 — Add GitHub Actions secrets
+
+Go to **GitHub → repo → Settings → Secrets and variables → Actions** and add:
+
+| Secret | Value |
+|---|---|
+| `AWS_ACCESS_KEY_ID` | IAM key for CI (least-privilege, scoped to ECR push + EKS deploy) |
+| `AWS_SECRET_ACCESS_KEY` | Corresponding IAM secret |
+| `AWS_REGION` | e.g. `us-east-1` |
+| `ECR_REGISTRY` | e.g. `123456789.dkr.ecr.us-east-1.amazonaws.com` |
+| `SLACK_WEBHOOK` | Slack incoming webhook URL for `#deployments` |
+
+### Step 10 — Register the service
+
+Add a row to `infra/shared/services.md`:
+
+```
+| <service-name> | <metric-prefix>_ | <coralogix-app-name> | <coralogix-subsystem> |
+```
+
+Then add a Terraform module instantiation in both `infra/envs/sandbox/main.tf` and `infra/envs/production/main.tf`.
+
+### Step 11 — Complete the §13 checklist
+
+Do not merge to `master` or deploy to production until every item in the New Service Checklist (§13) is checked off.
+
+---
+
+_Last updated: 2026-06-02. To propose a change, open a PR against this file and request review from at least two team members._
