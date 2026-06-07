@@ -17,7 +17,7 @@ Validated with `AWS_PROFILE=flokit-terraform` in AWS account `286897665372`.
 
 Terraform prod direction after the Atlas and Graviton updates:
 
-- Daily runtime is k3s control-plane EC2, k3s worker EC2, NLB, NAT Gateway, NAT EIP, and Kubernetes workloads.
+- Daily runtime is k3s control-plane EC2, k3s worker EC2, NLB, and Kubernetes workloads. NAT Gateway was removed on 2026-06-07; k8s nodes use Elastic IPs on the IGW path directly.
 - MongoDB EC2/EBS is no longer part of the target prod stack; Atlas owns database storage.
 - Additional ECR/DNS entries are added for `web2app-manager`, `agentic-pmf-test`, and `campaign-manager`.
 - Backend Cloudflare records point to the shared k3s NLB.
@@ -27,7 +27,7 @@ Live AWS state after the 2026-06-07 deployment:
 - k3s control plane is running on EC2 `i-0cfb9dcb26be62f08`, private IP `10.40.10.56`, instance type `t4g.small`.
 - k3s worker is running on EC2 `i-056aef04d4cbd870a`, private IP `10.40.10.211`, instance type `t4g.small`.
 - The shared backend NLB is `flokit-prod-k8s-nlb-cd30d3720c193331.elb.us-east-1.amazonaws.com`.
-- The stable NAT egress IP for Atlas Network Access is `44.196.213.243`; this IP is active in Atlas Network Access for the `Prod` project.
+- The NAT Gateway was removed on 2026-06-07. The k8s nodes now have Elastic IPs: control-plane `34.229.27.174`, worker-1 `184.72.181.81`. Both IPs must be registered in Atlas Network Access for the `Prod` project.
 - The shared NLB target groups now register both k3s instances; the active healthy ingress target is the control-plane instance while app pods are pinned there for reliable Atlas connectivity.
 - No EKS clusters exist in `us-east-1`.
 - Existing persistent/support resources include ECR repos, S3 buckets, ACM/Cloudflare DNS resources, IAM, VPC/subnets/route tables, and CloudWatch log groups.
@@ -94,7 +94,7 @@ flowchart TB
   subgraph vpc["VPC 10.40.0.0/16 us-east-1"]
     subgraph public["Public subnets"]
       igw["Internet Gateway"]
-      nat["NAT Gateway + EIP<br/>daily runtime only"]
+      eip["Elastic IPs on EC2 nodes<br/>(NAT Gateway removed 2026-06-07)"]
     end
 
     subgraph private["Private subnets"]
@@ -119,7 +119,8 @@ flowchart TB
   pods --> ecr
   pods --> secrets
   pods --> s3
-  private --> nat
+  private --> eip
+  eip --> igw
   public --> igw
 ```
 
@@ -134,7 +135,7 @@ Editable Draw.io diagram: `flokit_environment_hld.drawio`.
 | MongoDB Atlas | Atlas `Prod` cluster | Persistent application databases | No | Managed outside AWS Terraform; do not commit URI/password. |
 | EC2 root volumes | gp3, 30/30 GB | OS disks for daily EC2 instances | Yes | Destroyed with instances. |
 | NLB | Network Load Balancer | Public TCP 80/443 entrypoint to nginx NodePorts | Yes | One NLB for all backend services. |
-| NAT Gateway | NAT GW + EIP | Private-subnet outbound internet | Yes | Main avoidable runtime network cost. |
+| EC2 Elastic IPs | EIP per node | Public internet path for k8s nodes (replaces NAT) | Yes | Release EIPs before or immediately after instance termination to avoid idle EIP charges. |
 
 ## Services
 
@@ -226,13 +227,11 @@ Assumptions:
 |---|---:|
 | EC2: 2 x `t4g.small` before free trial credit | `$24.53` |
 | NLB hourly + 1 NLCU | `$20.81` |
-| NAT Gateway hourly | `$32.85` |
-| NAT Elastic IP / public IPv4 | about `$3.65` |
-| NAT data, 20 GB | `$0.90` |
+| 2 × EC2 Elastic IPs (attached, running) | `$0` |
 | EBS gp3, 60 GB | `$4.80` |
 | Secrets Manager | `$0` for runtime app secrets if using env-to-Kubernetes secret sync |
 | ECR/S3/CloudWatch/transfer low-volume allowance | `$2-$10` |
-| Estimated always-on AWS total before Atlas | `$90-$98/month` |
+| Estimated always-on AWS total before Atlas | `$57-63/month` (was $90-98 before NAT removal) |
 
 Daily destroy impact:
 
