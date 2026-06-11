@@ -28,7 +28,7 @@ Practical implications:
 Repo:
 
 ```text
-/Users/shai/git/bitewise
+/Users/shai/git/flokit.ai/bitewise
 ```
 
 GitHub:

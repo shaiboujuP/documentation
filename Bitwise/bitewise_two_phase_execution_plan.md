@@ -245,7 +245,7 @@ Add:
 Create the monorepo at:
 
 ```text
-/Users/shai/git/bitewise
+/Users/shai/git/flokit.ai/bitewise
 ```
 
 Folder structure:
@@ -745,7 +745,7 @@ Deliverable:
 
 # 6. Practical Next Steps
 
-1. Initialize `/Users/shai/git/bitewise` as a Git repo.
+1. Initialize `/Users/shai/git/flokit.ai/bitewise` as a Git repo.
 2. Choose package manager: pnpm is recommended.
 3. Scaffold Expo in `mobile/`.
 4. Scaffold Next.js in `web/`.
