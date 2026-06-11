@@ -7,21 +7,21 @@ This document is for a spawn agent that will start mobile development in the Bit
 Repo:
 
 ```text
-/Users/shai/git/bitewise
+/Users/shai/git/flokit.ai/bitewise
 ```
 
 Mobile folder:
 
 ```text
-/Users/shai/git/bitewise/mobile
+/Users/shai/git/flokit.ai/bitewise/mobile
 ```
 
 ## Non-Negotiable Standards
 
 Follow:
 
-- `/Users/shai/git/documentation/DEVELOPMENT_GUIDELINES.md`
-- `/Users/shai/git/documentation/CICD_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/DEVELOPMENT_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/CICD_GUIDELINES.md`
 
 Key rules:
 

@@ -7,13 +7,13 @@ This document is for a spawn agent that will prepare or validate the local mobil
 The mobile app lives in:
 
 ```text
-/Users/shai/git/bitewise/mobile
+/Users/shai/git/flokit.ai/bitewise/mobile
 ```
 
 The repo must follow:
 
-- `/Users/shai/git/documentation/DEVELOPMENT_GUIDELINES.md`
-- `/Users/shai/git/documentation/CICD_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/DEVELOPMENT_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/CICD_GUIDELINES.md`
 
 ## Confirmed Mobile Direction
 

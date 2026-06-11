@@ -7,13 +7,13 @@ This document is for a spawn agent that will build the API/backend service suppo
 Repo:
 
 ```text
-/Users/shai/git/bitewise
+/Users/shai/git/flokit.ai/bitewise
 ```
 
 API folder:
 
 ```text
-/Users/shai/git/bitewise/api
+/Users/shai/git/flokit.ai/bitewise/api
 ```
 
 The API service must support the V1 mobile loop:
@@ -33,8 +33,8 @@ No full dashboard is required in V1.
 
 Follow:
 
-- `/Users/shai/git/documentation/DEVELOPMENT_GUIDELINES.md`
-- `/Users/shai/git/documentation/CICD_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/DEVELOPMENT_GUIDELINES.md`
+- `/Users/shai/git/flokit.ai/documentation/CICD_GUIDELINES.md`
 
 Key rules:
 
