@@ -18,6 +18,8 @@ Two deployment environments exist:
 
 There is no manual promotion step. Code reaches production only through a reviewed and approved PR into `master`.
 
+> This branch-based deployment model applies to **application service** repos. The DevOps repo (`devops`) and the documentation repo (`documentation`) are trunk-based and have **no `dev` branch** — see [DEVELOPMENT_GUIDELINES.md §11](./DEVELOPMENT_GUIDELINES.md). The DevOps repo's only CI deploy action is `terraform apply` on merge to `master` (§6); the documentation repo is not deployed.
+
 ---
 
 ## 2. Secrets & Environment Variables
@@ -293,7 +295,7 @@ on:
 
 ## 7. Branch Protection Rules
 
-Configure these in GitHub → Settings → Branches for both `master` and `dev`.
+Configure these in GitHub → Settings → Branches. Application service repos protect both `master` and `dev`; the DevOps and documentation repos protect `master` only — they have no `dev` branch (see [DEVELOPMENT_GUIDELINES.md §11](./DEVELOPMENT_GUIDELINES.md)).
 
 ### `master`
 
@@ -309,7 +311,7 @@ Configure these in GitHub → Settings → Branches for both `master` and `dev`.
 | Block force pushes | ✅ Enabled |
 | Allow deletions | ❌ Disabled |
 
-### `dev`
+### `dev` (application service repos only)
 
 | Setting | Value |
 |---|---|
@@ -318,6 +320,19 @@ Configure these in GitHub → Settings → Branches for both `master` and `dev`.
 | Require status checks to pass | ✅ Enabled |
 | Required checks | `ci / ci` |
 | Block force pushes | ✅ Enabled |
+
+### `master` on the DevOps & documentation repos
+
+These repos are trunk-based with **no `dev` branch**. Protect `master` as above (PR required, force-push blocked, deletions disabled), with these differences:
+
+| Setting | DevOps (`devops`) | Documentation |
+|---|---|---|
+| Required approvals | 1 | 2 for `*_GUIDELINES.md`, otherwise 1 |
+| Required status checks | `terraform fmt -check`, `terraform validate`, `terraform plan`, Conftest | markdown lint / link check (if configured) |
+| Block force pushes | ✅ Enabled | ✅ Enabled |
+| Allow deletions | ❌ Disabled | ❌ Disabled |
+
+Neither repo has a `dev` branch or a `sandbox` GitHub Environment. The DevOps repo keeps a `production` environment solely to gate `terraform apply` for destructive changes (§6).
 
 ### GitHub Environments
 
@@ -384,4 +399,4 @@ All deploy and rollback events must be posted to `#deployments` in Slack with th
 
 ---
 
-_Last updated: 2026-05-31. To propose a change, open a PR against this file and request review from at least two team members._
+_Last updated: 2026-06-11. To propose a change, open a PR against this file and request review from at least two team members._
