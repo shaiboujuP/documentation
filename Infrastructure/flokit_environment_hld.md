@@ -1,6 +1,6 @@
 # Flokit AWS Environment HLD
 
-Date: 2026-06-07
+Date: 2026-06-11
 
 ## Goal
 
@@ -17,21 +17,54 @@ Validated with `AWS_PROFILE=flokit-terraform` in AWS account `286897665372`.
 
 Terraform prod direction after the Atlas and Graviton updates:
 
-- Daily runtime is k3s control-plane EC2, k3s worker EC2, NLB, and Kubernetes workloads. NAT Gateway was removed on 2026-06-07; k8s nodes use Elastic IPs on the IGW path directly.
+- Daily runtime is k3s control-plane EC2, k3s worker EC2, NAT Gateway, NLB, and Kubernetes workloads. The runtime is intended to be destroyed at the end of each work day.
 - MongoDB EC2/EBS is no longer part of the target prod stack; Atlas owns database storage.
 - Additional ECR/DNS entries are added for `web2app-manager`, `agentic-pmf-test`, and `campaign-manager`.
 - Backend Cloudflare records point to the shared k3s NLB.
 
-Live AWS state after the 2026-06-07 deployment:
+Live AWS state after the 2026-06-11 deployment:
 
-- k3s control plane is running on EC2 `i-0cfb9dcb26be62f08`, private IP `10.40.10.56`, instance type `t4g.small`.
-- k3s worker is running on EC2 `i-056aef04d4cbd870a`, private IP `10.40.10.211`, instance type `t4g.small`.
+- k3s control plane is running on EC2 `i-05efe0a45b1880e06`, private IP `10.40.10.243`, instance type `t4g.small`.
+- k3s worker is running on EC2 `i-0841fe6508baf63dc`, private IP `10.40.10.20`, instance type `t4g.small`.
 - The shared backend NLB is `flokit-prod-k8s-nlb-cd30d3720c193331.elb.us-east-1.amazonaws.com`.
-- The NAT Gateway was removed on 2026-06-07. The k8s nodes now have Elastic IPs: control-plane `34.229.27.174`, worker-1 `184.72.181.81`. Both IPs must be registered in Atlas Network Access for the `Prod` project.
-- The shared NLB target groups now register both k3s instances; the active healthy ingress target is the control-plane instance while app pods are pinned there for reliable Atlas connectivity.
+- The NAT Gateway is `nat-0856ed3a2f63e24af`; its current Elastic IP is `100.29.198.18`. This IP must be registered in Atlas Network Access for the `Prod` project.
+- The shared NLB target groups register both k3s instances; the active healthy ingress target is the control-plane instance because nginx ingress is pinned there with `externalTrafficPolicy: Local`.
 - No EKS clusters exist in `us-east-1`.
 - Existing persistent/support resources include ECR repos, S3 buckets, ACM/Cloudflare DNS resources, IAM, VPC/subnets/route tables, and CloudWatch log groups.
 - Atlas MongoDB is the persistent database layer and must be access-listed for the runtime egress path.
+
+Terraform validation on 2026-06-11 returned `No changes. Your infrastructure matches the configuration.`
+
+## Deployment Status: 2026-06-11
+
+Applied successfully:
+
+- Terraform prod infrastructure converged: `8 added, 3 changed, 6 destroyed` during rebuild, followed by a clean `terraform plan`.
+- k3s `v1.32.3+k3s1` is running on two ARM/Graviton `t4g.small` nodes.
+- Amazon Linux 2023 bootstrap now uses `dnf install --allowerasing` for `curl`, fixing the `curl-minimal` conflict that blocked k3s installation on the refreshed AMI.
+- The worker node has stable label `flokit.ai/workload=true`; hostname-pinned workload selectors were removed from the app manifests.
+- nginx ingress is pinned to the control-plane node with label `flokit.ai/ingress=true`.
+- The worker security group keeps the control-plane to worker ingress rule required for Kubernetes webhooks and pod networking.
+- ECR pull secrets and app secrets were synced to all app namespaces.
+- `web2app-manager`, `payments-gateway`, and `bitewise-api` are publicly healthy.
+
+Current endpoint test summary:
+
+| Host | Result | Notes |
+|---|---:|---|
+| `api.dashboard.flokitai.com/healthz` | `503` | Pod starts but cannot connect to Atlas until NAT IP `100.29.198.18` is allow-listed. |
+| `payments-api.flokitai.com/healthz` | `503` | `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` are empty in AWS Secrets Manager. |
+| `payments-gateway.flokitai.com/healthz` | `200` | Healthy. |
+| `bitewise-api.flokitai.com/healthz` | `200` | Healthy. |
+| `app.flokitai.com/healthz` | `200` | Healthy. |
+| `campaign-manager.flokitai.com/healthz` | `503` | Pod starts but cannot connect to Atlas until NAT IP `100.29.198.18` is allow-listed. |
+| `agentic-pmf-test.flokitai.com/healthz` | `503` | Pod starts but cannot connect to Atlas until NAT IP `100.29.198.18` is allow-listed. |
+
+Current blockers:
+
+- Add `100.29.198.18` to MongoDB Atlas Network Access for the `Prod` project. Chrome opened Atlas signed out, and Atlas CLI `1.55.0` is installed but not authenticated.
+- Populate real values for `flokit-prod/payments-api/stripe-secret-key` and `flokit-prod/payments-api/stripe-webhook-secret`.
+- Rerun `scripts/sync-k8s-secrets.sh` and restart affected deployments after those two items are fixed.
 
 ## Deployment Status: 2026-06-07
 
@@ -94,7 +127,7 @@ flowchart TB
   subgraph vpc["VPC 10.40.0.0/16 us-east-1"]
     subgraph public["Public subnets"]
       igw["Internet Gateway"]
-      eip["Elastic IPs on EC2 nodes<br/>(NAT Gateway removed 2026-06-07)"]
+      nat["NAT Gateway + Elastic IP<br/>100.29.198.18 current"]
     end
 
     subgraph private["Private subnets"]
@@ -119,8 +152,8 @@ flowchart TB
   pods --> ecr
   pods --> secrets
   pods --> s3
-  private --> eip
-  eip --> igw
+  private --> nat
+  nat --> igw
   public --> igw
 ```
 
@@ -135,7 +168,7 @@ Editable Draw.io diagram: `flokit_environment_hld.drawio`.
 | MongoDB Atlas | Atlas `Prod` cluster | Persistent application databases | No | Managed outside AWS Terraform; do not commit URI/password. |
 | EC2 root volumes | gp3, 30/30 GB | OS disks for daily EC2 instances | Yes | Destroyed with instances. |
 | NLB | Network Load Balancer | Public TCP 80/443 entrypoint to nginx NodePorts | Yes | One NLB for all backend services. |
-| EC2 Elastic IPs | EIP per node | Public internet path for k8s nodes (replaces NAT) | Yes | Release EIPs before or immediately after instance termination to avoid idle EIP charges. |
+| NAT Elastic IP | EIP attached to NAT Gateway | Stable outbound IP for Atlas allow-listing | Yes | Current IP is `100.29.198.18`; release with NAT during destroy. |
 
 ## Services
 
@@ -231,7 +264,7 @@ Assumptions:
 | EBS gp3, 60 GB | `$4.80` |
 | Secrets Manager | `$0` for runtime app secrets if using env-to-Kubernetes secret sync |
 | ECR/S3/CloudWatch/transfer low-volume allowance | `$2-$10` |
-| Estimated always-on AWS total before Atlas | `$57-63/month` (was $90-98 before NAT removal) |
+| Estimated always-on AWS total before Atlas | `$90-98/month` with NAT Gateway |
 
 Daily destroy impact:
 

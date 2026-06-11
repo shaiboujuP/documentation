@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" modified="2026-06-06T00:00:00.000Z" agent="Codex" version="26.0.0">
+<mxfile host="app.diagrams.net" modified="2026-06-11T00:00:00.000Z" agent="Codex" version="26.0.0">
   <diagram id="flokit-hld" name="Flokit AWS HLD">
     <mxGraphModel dx="1600" dy="1000" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="1100" math="0" shadow="0">
       <root>
@@ -25,16 +25,16 @@
         <mxCell id="igw" value="Internet Gateway&#xa;free, persistent" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dcfce7;strokeColor=#16a34a;fontSize=12" vertex="1" parent="public">
           <mxGeometry x="35" y="55" width="160" height="70" as="geometry"/>
         </mxCell>
-        <mxCell id="nat" value="NAT Gateway + EIP&#xa;destroy end of day&#xa;main avoidable cost" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;fontStyle=1" vertex="1" parent="public">
+        <mxCell id="nat" value="NAT Gateway + EIP&#xa;100.29.198.18 current&#xa;destroy end of day" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#dc2626;fontSize=12;fontStyle=1" vertex="1" parent="public">
           <mxGeometry x="225" y="55" width="160" height="90" as="geometry"/>
         </mxCell>
         <mxCell id="private" value="Private subnets - daily compute" style="swimlane;whiteSpace=wrap;html=1;startSize=28;fillColor=#f8fafc;strokeColor=#64748b;fontSize=13;fontStyle=1" vertex="1" parent="vpc">
           <mxGeometry x="480" y="50" width="810" height="540" as="geometry"/>
         </mxCell>
-        <mxCell id="cp" value="k3s control plane&#xa;EC2 t4g.small ARM&#xa;SSM access, no public IP" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12" vertex="1" parent="private">
+        <mxCell id="cp" value="k3s control plane&#xa;EC2 t4g.small ARM&#xa;10.40.10.243, SSM access" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12" vertex="1" parent="private">
           <mxGeometry x="35" y="55" width="220" height="105" as="geometry"/>
         </mxCell>
-        <mxCell id="worker" value="k3s worker&#xa;EC2 t4g.small ARM&#xa;runs pods + Redis + ingress" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12" vertex="1" parent="private">
+        <mxCell id="worker" value="k3s worker&#xa;EC2 t4g.small ARM&#xa;10.40.10.20&#xa;label flokit.ai/workload=true" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ede9fe;strokeColor=#7c3aed;fontSize=12" vertex="1" parent="private">
           <mxGeometry x="300" y="55" width="220" height="105" as="geometry"/>
         </mxCell>
         <mxCell id="ingress" value="nginx ingress controller&#xa;NodePort 30080/30443&#xa;host-based routing" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#cffafe;strokeColor=#0891b2;fontSize=12" vertex="1" parent="private">
