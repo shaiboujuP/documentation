@@ -380,6 +380,8 @@ Two environments exist:
 
 There is no manual promotion step between environments. Code reaches production only through a reviewed and approved PR into `master`.
 
+> These environments and the branch-based deploys below apply to **application services**. The DevOps (`devops`) and documentation (`documentation`) repos do not deploy from a `dev` branch — see §11.1.
+
 **Environment detection:** services read `NODE_ENV` (`development` / `sandbox` / `production`). Never branch on the literal string in business logic — use feature flags or config instead.
 
 **Secrets:** never in code or git. Secrets are stored in Kubernetes Secrets (backed by a secrets manager) and injected as environment variables into pods. `.env.example` documents every variable with a description and safe placeholder value. Local development uses `.env` files (gitignored).
@@ -532,6 +534,20 @@ Every deploy records the previous image tag. If the health check or smoke test f
 
 ## 11. Git & Branching
 
+Branching rules depend on **what kind of repository** you are in. There are three classes, and they deliberately do **not** share the same model — an application service deploys from branches, but the infrastructure and documentation repos do not.
+
+### 11.1 Repository classes
+
+| Class | Repos | Long-lived branches | Deploys from a branch? |
+|---|---|---|---|
+| Application service | every service repo (`payments-api`, `bitewise`, `web2app-manager`, …) | `dev`, `master` | Yes — `dev` → sandbox, `master` → production |
+| Infrastructure / DevOps | `devops` | `master` only | No — environments are Terraform directories, not branches |
+| Documentation | `documentation` | `master` only | No — docs are not deployed |
+
+The **`dev` branch exists only for application services.** The DevOps and documentation repos are trunk-based and must not carry a long-lived `dev` branch.
+
+### 11.2 Application services
+
 | Branch | Deploys to | Rules |
 |---|---|---|
 | `dev` | Sandbox (automatic) | Feature branches merge here first |
@@ -540,10 +556,68 @@ Every deploy records the previous image tag. If the health check or smoke test f
 | `fix/*` | — | Short-lived; merge to `dev` |
 
 - `master` is always production-ready. Never merge broken code.
-- PRs require one reviewer approval before merge.
+- Promotion is `dev` → `master` via reviewed PR. There is no manual environment promotion step.
+
+### 11.3 Infrastructure / DevOps repo (`devops`)
+
+The DevOps repo is **trunk-based**. `master` is the only long-lived branch.
+
+| Branch | Purpose | Rules |
+|---|---|---|
+| `master` | Single source of truth for all infrastructure | Reviewed PR only; never push directly |
+| `feat/*`, `fix/*`, `chore/*`, `bootstrap/*` | Short-lived change branches | Branch from `master`, PR back into `master`, delete after merge |
+
+- **Environments are directories, not branches.** Each environment is a Terraform composition under `terraform/envs/<env>` (e.g. `terraform/envs/prod`) with its own state and `terraform.tfvars`. The same code is applied to each environment by selecting the directory/workspace — never by maintaining a parallel long-lived branch per environment.
+- A long-lived `dev` (or `staging`/`prod`) branch is a **forbidden anti-pattern** here: parallel environment branches drift and become impossible to reconcile. To test an infrastructure change safely, apply your change branch's plan against a non-production environment directory — do not create an environment branch.
+- Every PR runs `terraform fmt -check`, `terraform validate`, Conftest policy checks, and `terraform plan` (posted to the PR). See §9.
+- Merging to `master` runs `terraform apply`: non-destructive changes auto-apply; destructive changes require a manual approval gate. See [CICD_GUIDELINES.md §6](./CICD_GUIDELINES.md).
+
+### 11.4 Documentation repo (`documentation`)
+
+The documentation repo is **trunk-based** and is **not deployed**.
+
+| Branch | Purpose | Rules |
+|---|---|---|
+| `master` | Published source of truth for all guidelines and docs | Reviewed PR only; never push directly |
+| `docs/*`, `fix/*` | Short-lived change branches | Branch from `master`, PR back into `master`, delete after merge |
+
+- No `dev` branch, no sandbox, no deploy step. A merge to `master` simply updates the docs.
+- PRs require one reviewer approval. Guideline files (`*_GUIDELINES.md`) require **two** approvals — see the footer of each guideline.
+
+### 11.5 Rules common to all repos
+
+- PRs require at least one reviewer approval before merge (guideline docs require two).
 - Commit messages: imperative mood, present tense. _"Add Coralogix batching"_, not _"Added..."_.
 - Squash-merge PRs. The PR title becomes the commit message.
-- Semver tags (`v1.2.3`) are created on `master` by the release author post-smoke-test.
+- Never push directly to `master`. Never force-push a shared branch. Never delete `master`.
+- Semver tags (`v1.2.3`) are created on `master` by the release author post-smoke-test (application services only).
+
+### 11.6 Policy breaches
+
+A **breach** is any action that bypasses the branching, review, or deploy rules above. Breaches are treated as incidents, not mistakes to be quietly fixed.
+
+**What counts as a breach:**
+
+- A direct push to `master` (any repo).
+- A force-push to, or deletion of, any shared branch (`master`, or `dev` on a service repo).
+- Merging a PR without the required approvals, or self-approving.
+- Bypassing required status checks (e.g. admin-merging a red PR).
+- Re-introducing a long-lived `dev`/`staging`/`prod` branch in the DevOps or documentation repos.
+- Any manual change to cloud infrastructure outside Terraform — a console change ("if you clicked it, it doesn't exist", §9).
+
+**Detection.** Branch protection (see [CICD_GUIDELINES.md §7](./CICD_GUIDELINES.md)) blocks most breaches outright. The remainder are caught by GitHub's audit log, Terraform nightly drift detection (§9), and the required-reviewers gate on the `production` environment.
+
+**Required response.** When a breach is detected:
+
+1. **Announce it** in `#engineering` immediately — name the repo, the branch, and the commit/PR. Breaches are surfaced, never hidden.
+2. **Assess impact.** Did the change reach an environment? For infra, run `terraform plan` to measure drift; for services, check whether the change deployed.
+3. **Restore the rule.** Revert the offending commit via a normal reviewed PR, or roll back the deploy (see [CICD_GUIDELINES.md §5](./CICD_GUIDELINES.md)). Never "fix forward" with a second out-of-policy push.
+4. **Re-enable protection** if it was disabled, and confirm the setting matches §7.
+5. **Write it up.** For any breach that reached production or caused infra drift, file a short blameless postmortem: what happened, why protection didn't stop it, and the control added so it can't recur.
+
+**Repeated breaches** of the same rule signal a missing control, not a careless person — the postmortem must close with a concrete control (a new branch-protection setting, a CI check, a CODEOWNERS rule), not just a reminder.
+
+> This section covers **process / policy breaches**. Security incidents and data breaches (credential leaks, unauthorised access, PII exposure) are a separate concern — handle those via the security incident-response process and §12, not this section.
 
 ---
 
@@ -606,6 +680,8 @@ gh repo edit --default-branch master
 ```
 
 Both branches must exist before branch protection rules can be applied.
+
+> This `dev` + `master` setup is for **application service** repos only. The DevOps and documentation repos are trunk-based (§11.3–11.4) — create `master` alone and skip the `dev` branch entirely.
 
 ### Step 3 — Set branch protection rules
 
@@ -823,4 +899,4 @@ Do not merge to `master` or deploy to production until every item in the New Ser
 
 ---
 
-_Last updated: 2026-06-02. To propose a change, open a PR against this file and request review from at least two team members._
+_Last updated: 2026-06-11. To propose a change, open a PR against this file and request review from at least two team members._
