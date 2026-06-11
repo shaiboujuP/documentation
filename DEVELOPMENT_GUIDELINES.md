@@ -419,10 +419,52 @@ Every service ships its own Kubernetes manifests in `k8s/`. These are the source
 
 Mandatory manifest requirements:
 
-- `livenessProbe` and `readinessProbe` pointing to `GET /healthz`
+- `startupProbe`, `livenessProbe`, and `readinessProbe` pointing to `GET /healthz` (see **Health-Check Probes** below)
 - `resources.requests` and `resources.limits` for CPU and memory
 - `envFrom` referencing a `ConfigMap` for non-secret config and a `Secret` for secrets
 - `terminationGracePeriodSeconds` set to at least 30 s to allow in-flight requests to drain
+
+### Health-Check Probes
+
+Every service exposes `GET /healthz`, returning `{ "status": "ok" }` once it is
+ready to serve traffic. This single endpoint backs all three probes and the
+post-deploy CI smoke-test. Use this exact probe block in every
+`k8s/<service>/deployment.yaml`, changing only `<port>` to the container port:
+
+```yaml
+startupProbe:           # gates liveness/readiness until the app has booted
+  httpGet:
+    path: /healthz
+    port: <port>
+  periodSeconds: 10
+  failureThreshold: 30  # allow up to ~5 min to come up before the pod is killed
+livenessProbe:
+  httpGet:
+    path: /healthz
+    port: <port>
+  initialDelaySeconds: 15
+  periodSeconds: 15
+readinessProbe:
+  httpGet:
+    path: /healthz
+    port: <port>
+  initialDelaySeconds: 10
+  periodSeconds: 10
+```
+
+Rules:
+
+- **Always include the `startupProbe`.** It is what makes the short
+  `livenessProbe.initialDelaySeconds` safe — without it, a service that is slow
+  to boot (migrations, cache warm-up, cold JIT) can be killed by the liveness
+  probe before it ever comes up, producing a crash-loop that looks like an app
+  bug but is really a probe-timing bug.
+- Do not lower `failureThreshold` on the liveness or readiness probes (the
+  Kubernetes defaults of 3 apply); slow-boot tolerance belongs in the
+  `startupProbe`, not in loosened liveness thresholds.
+- `/healthz` must be cheap and dependency-light. It should report that the
+  process is up — not run deep checks against databases or upstreams, which would
+  make a downstream blip cascade into pods being restarted.
 
 ### Networking
 
