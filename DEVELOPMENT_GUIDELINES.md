@@ -371,6 +371,13 @@ Two environments exist:
 - Push or merge to `dev` → automatic deploy to **sandbox**.
 - PR merged into `master` → automatic deploy to **production**.
 
+> **Temporary (current state):** the `sandbox` environment is not provisioned
+> yet. Until it is, a push to `dev` runs **CI only** (typecheck, tests, build,
+> audit) and does **not** deploy — service pipelines omit the `deploy-sandbox`
+> job. Production behaviour is unchanged: merging into `master` still deploys.
+> Restore the sandbox auto-deploy step in each service's `ci.yml` once the
+> sandbox environment exists.
+
 There is no manual promotion step between environments. Code reaches production only through a reviewed and approved PR into `master`.
 
 **Environment detection:** services read `NODE_ENV` (`development` / `sandbox` / `production`). Never branch on the literal string in business logic — use feature flags or config instead.
