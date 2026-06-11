@@ -814,13 +814,19 @@ spec:
             httpGet:
               path: /healthz
               port: 4173
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 15
+          startupProbe:
+            httpGet:
+              path: /healthz
+              port: 4173
+            periodSeconds: 10
+            failureThreshold: 30
           readinessProbe:
             httpGet:
               path: /healthz
               port: 4173
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
           envFrom:
             - configMapRef:
