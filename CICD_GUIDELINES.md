@@ -40,7 +40,7 @@ Never store secrets as repository variables (those are not encrypted). Never har
 | `ECR_REGISTRY` | Full ECR registry URL |
 | `EKS_CLUSTER_NAME` | `kubectl` context |
 | `SLACK_WEBHOOK_URL` | Deployment and rollback notifications |
-| `CORALOGIX_API_KEY` | Log shipping (injected into pods, not used by CI directly) |
+| `GRAFANA_LOGS_API_KEY` | Log shipping (injected into pods, not used by CI directly) |
 | `GRAFANA_API_KEY` | Metrics (injected into pods, not used by CI directly) |
 
 ### How secrets flow to pods
