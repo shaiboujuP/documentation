@@ -215,8 +215,8 @@ Define alert rules in the Coralogix Alerts console (export as JSON to `coralogix
 
 | Variable | Description |
 |---|---|
-| `GRAFANA_METRICS_URL` | Push URL from your Grafana Cloud stack (e.g. `https://influx-prod-xx.grafana.net/api/v1/push/influx/write`) |
-| `GRAFANA_API_KEY` | Grafana Cloud API key with the _MetricsPublisher_ role |
+| `GRAFANA_METRICS_URL` | InfluxDB write URL from the stack's **InfluxDB Connectivity** card, suffixed with `/api/v1/push/influx/write`. Note this is served on the **Prometheus host**, not a separate `influx-prod-xx` host (e.g. `https://prometheus-prod-66-prod-us-east-3.grafana.net/api/v1/push/influx/write`). |
+| `GRAFANA_API_KEY` | `<instanceID>:<token>` pair (the Prometheus instance ID as username, an access-policy token with `metrics:write` as password). The endpoint uses **HTTP Basic auth**, so services send `Authorization: Basic base64(GRAFANA_API_KEY)` — _not_ `Bearer`. |
 | `GRAFANA_SERVICE_NAME` | Canonical service identifier used as the metric prefix and in dashboard labels (e.g. `payments-api`) |
 
 #### Emitting metrics
