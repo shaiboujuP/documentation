@@ -98,7 +98,7 @@ All outbound `fetch` calls get a timeout (use `AbortSignal.timeout(ms)`). Treat 
 
 ## 5. Observability
 
-### 5.1 Logging with Coralogix
+### 5.1 Logging with Grafana Loki
 
 #### Log format
 
@@ -146,64 +146,81 @@ Every service writes structured JSON to stdout — one JSON object per line:
 - PII (email, name, phone, address) — log IDs or hashes instead.
 - Full stack traces in any field — include only `error.message`. Full stacks belong in your local debugger.
 
-#### Coralogix environment variables
+#### Grafana Loki environment variables
 
 | Variable | Description |
 |---|---|
-| `CORALOGIX_API_KEY` | Send-Your-Data API key |
-| `CORALOGIX_APP_NAME` | Unique per service (e.g. `payments-api`). Every new service must set a distinct value. |
-| `CORALOGIX_SUBSYSTEM` | Use the environment (`sandbox` / `production`). Defaults to `NODE_ENV` if unset. |
-| `CORALOGIX_REGION` | Ingestion endpoint region (e.g. `EU2`). Defaults to `EU2`. |
+| `GRAFANA_LOGS_URL` | Loki push endpoint from the stack's **Loki Connectivity** card (e.g. `https://logs-prod-042.grafana.net/loki/api/v1/push`). |
+| `GRAFANA_LOGS_API_KEY` | `<lokiInstanceID>:<token>` pair (the Loki instance ID as username, an access-policy token with `logs:write` as password). The endpoint uses **HTTP Basic auth**, so services send `Authorization: Basic base64(GRAFANA_LOGS_API_KEY)` — _not_ `Bearer`. |
 
-#### Shipping to Coralogix
+The Loki `service` stream label is taken from `GRAFANA_SERVICE_NAME` (the same canonical service identifier already used for metrics — see 5.2). Every new service must set a distinct value.
 
-Batch logs and POST to the Coralogix REST API every **5 seconds**:
+#### Shipping to Loki
+
+Batch logs and POST to the Loki push API every **5 seconds**:
 
 ```
-POST https://ingress.<CORALOGIX_REGION>.coralogix.com/logs/v1/singles
-Authorization: Bearer <CORALOGIX_API_KEY>
+POST <GRAFANA_LOGS_URL>
+Authorization: Basic base64(<GRAFANA_LOGS_API_KEY>)
 Content-Type: application/json
 ```
 
+The body is Loki JSON, grouping entries into one stream per log level. Each value is a `[<unix_ns>, "<json log line>"]` pair:
+
 ```json
 {
-  "applicationName": "<CORALOGIX_APP_NAME>",
-  "subsystemName": "<CORALOGIX_SUBSYSTEM>",
-  "logEntries": [
-    { "timestamp": 1717027200123, "severity": 3, "text": "{...json log line...}" }
+  "streams": [
+    {
+      "stream": {
+        "service": "<GRAFANA_SERVICE_NAME>",
+        "level": "info",
+        "env": "<NODE_ENV>"
+      },
+      "values": [
+        ["1717027200123000000", "{...json log line...}"]
+      ]
+    }
   ]
 }
 ```
 
-Severity mapping: `debug` → 1, `verbose` → 2, `info` → 3, `warn` → 4, `error` → 5, `critical` → 6.
-
 Rules:
-- If `CORALOGIX_API_KEY` is absent, write to stdout only — never throw.
+- If `GRAFANA_LOGS_URL` is absent, write to stdout only — never throw.
+- Group entries by `level` into separate streams; timestamps are Unix nanoseconds (string).
 - Maximum batch: 500 entries or 1 MB, whichever comes first. Flush early when the batch limit is reached.
 - On failure (network error or non-2xx): retry once after 2 s, then drop the batch and emit a single `warn` to stdout. Never retry indefinitely or block the event loop.
 - Never log the API key or any secret in failure messages.
 
-#### Querying logs in Coralogix
+#### Querying logs in Grafana
 
-Use DataPrime syntax in the Coralogix Explore view:
+Use LogQL in the Grafana Explore view (Loki datasource):
 
-```dataprime
+```logql
 # All errors for a service
-source logs | filter $l.applicationname == 'payments-api' and $l.severity >= 5
+{service="payments-api", level="error"}
 
 # Slow requests (> 1 s)
-source logs | filter $d.durationMs > 1000 and $l.applicationname == 'payments-api'
+{service="payments-api"} | json | durationMs > 1000
 
 # All events for a specific request
-source logs | filter $d.requestId == 'req_abc123'
+{service="payments-api"} | json | requestId = "req_abc123"
 ```
 
-#### Coralogix alerts
+#### Loki alerts
 
-Define alert rules in the Coralogix Alerts console (export as JSON to `coralogix/alerts.json` for version control). Required alerts:
+Define Loki/LogQL alert rules provisioned in each service's `grafana/` alerts file (version-controlled). Required alerts:
 
 - Any `error`-level log from a production service → route to `#oncall` Slack immediately.
+
+  ```logql
+  count_over_time({service="payments-api", level="error", env="production"}[5m]) > 0
+  ```
+
 - More than 10 `warn`-level logs within 5 minutes from the same service → route to `#engineering` Slack.
+
+  ```logql
+  count_over_time({service="payments-api", level="warn"}[5m]) > 10
+  ```
 
 ---
 
@@ -629,7 +646,7 @@ The documentation repo is **trunk-based** and is **not deployed**.
 ### 11.5 Rules common to all repos
 
 - PRs require at least one reviewer approval before merge (guideline docs require two).
-- Commit messages: imperative mood, present tense. _"Add Coralogix batching"_, not _"Added..."_.
+- Commit messages: imperative mood, present tense. _"Add Loki log batching"_, not _"Added..."_.
 - Squash-merge PRs. The PR title becomes the commit message.
 - Never push directly to `master`. Never force-push a shared branch. Never delete `master`.
 - Semver tags (`v1.2.3`) are created on `master` by the release author post-smoke-test (application services only).
@@ -689,7 +706,7 @@ Every new service must ship all of the following before its first production dep
 - [ ] Component tests for all stateful React components (FE services only), with `axe` accessibility assertions
 - [ ] Database migration test job in CI (ephemeral Postgres, migrate from scratch, verify schema)
 - [ ] `.env.example` with all variables documented
-- [ ] Structured logging with a distinct `CORALOGIX_APP_NAME`
+- [ ] Structured logging with a distinct `GRAFANA_SERVICE_NAME`
 - [ ] Grafana metrics with a distinct metric prefix
 - [ ] Terraform/IaC entry in `infra/envs/sandbox/` and `infra/envs/production/`
 - [ ] Rollback strategy documented (automatic via CI health-check gate)
@@ -936,7 +953,7 @@ Go to **GitHub → repo → Settings → Secrets and variables → Actions** and
 Add a row to `infra/shared/services.md`:
 
 ```
-| <service-name> | <metric-prefix>_ | <coralogix-app-name> | <coralogix-subsystem> |
+| <service-name> | <metric-prefix>_ | <grafana-service-label> | <env> |
 ```
 
 Then add a Terraform module instantiation in both `infra/envs/sandbox/main.tf` and `infra/envs/production/main.tf`.

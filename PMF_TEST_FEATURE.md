@@ -202,7 +202,7 @@ Follows `CICD_GUIDELINES.md` exactly:
 - Merge to `dev` → auto-deploy to sandbox
 - Merge to `master` (via reviewed PR) → auto-deploy to production
 - GitHub Actions, ECR, EKS
-- Coralogix for logs, Grafana for metrics
+- Grafana Loki for logs, Grafana Cloud for metrics
 
 ---
 
