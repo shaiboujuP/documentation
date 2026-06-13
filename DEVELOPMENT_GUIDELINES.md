@@ -409,7 +409,15 @@ There is no manual promotion step between environments. Code reaches production 
 
 ### Container Platform
 
-Everything runs on **AWS EKS**. All services, workers, cron jobs, queues, and internal tooling are Kubernetes-managed unless there is a documented and approved reason not to be.
+Everything runs on **Kubernetes**. The current production platform is a
+**self-managed k3s cluster on EC2** (not EKS) — chosen for low cost and fast
+daily create/destroy. The concrete platform (k3s, the shared NLB, MongoDB Atlas,
+ECR, Cloudflare DNS) is documented in
+[`Infrastructure/flokit_environment_hld.md`](./Infrastructure/flokit_environment_hld.md)
+and [`Infrastructure/AWS_COST_POLICY.md`](./Infrastructure/AWS_COST_POLICY.md),
+which are the source of truth for what actually runs. All services, workers, cron
+jobs, queues, and internal tooling are Kubernetes-managed unless there is a
+documented and approved reason not to be.
 
 Each service is a separate Kubernetes `Deployment` with its own namespace. No shared pods across services.
 
@@ -486,19 +494,19 @@ Rules:
 ### Networking
 
 - All inter-service traffic stays inside the cluster via Kubernetes `Service` DNS (`service-name.namespace.svc.cluster.local`).
-- Public traffic enters through an ingress controller (NGINX Ingress or AWS Load Balancer Controller).
+- Public traffic enters through a single AWS Network Load Balancer (NLB) fronting the in-cluster **nginx-ingress** controller, which routes by `Host` header — one domain per service.
 - Network policies restrict pod-to-pod traffic: a pod may only receive traffic from the ingress and from services explicitly listed in its `NetworkPolicy`.
 
 ### Storage & Databases
 
-- **Relational data:** PostgreSQL. One RDS PostgreSQL cluster per environment. Use separate databases per service, not separate clusters. Schema managed by migration files in `db/migrations/`; migrations run as a Kubernetes `Job` before the new `Deployment` rolls out.
-- **Cache / ephemeral key-value:** Redis (ElastiCache Redis or self-hosted on EKS). One cluster per environment.
+- **Application data:** the current platform uses **MongoDB Atlas** (managed `mongodb+srv`) as the persistent data layer for the Mongo-backed services — see the Infrastructure HLD. This is a deliberate deviation from the cloud-agnostic *preference* for a PostgreSQL-compatible store (below), chosen for low operational overhead, and is tracked as such. New relational needs should still prefer PostgreSQL with standard SQL and migrations in `db/migrations/` (run as a Kubernetes `Job` before the new `Deployment` rolls out). **DynamoDB remains prohibited.**
+- **Cache / ephemeral key-value:** Redis. The current platform runs Redis **in-cluster on k3s** (not ElastiCache).
 - **Object storage:** S3-compatible storage accessed through a thin abstraction layer — never call the AWS SDK directly from service code. Bucket naming: `<org>-<service>-<env>`.
 - Never auto-migrate on startup inside the main process.
 
 ### DNS & TLS
 
-- Route 53 for DNS. Wildcard TLS certificate per environment managed by cert-manager (Let's Encrypt or ACM).
+- **Cloudflare** for DNS (one CNAME per service pointing at the shared NLB). Per-service TLS certificates managed by cert-manager via the `letsencrypt-prod` ClusterIssuer.
 - HTTPS everywhere. HTTP redirects to HTTPS at the ingress.
 
 ---
