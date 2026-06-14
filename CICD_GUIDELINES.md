@@ -340,7 +340,7 @@ These repos are trunk-based with **no `dev` branch**. Protect `master` as above 
 
 | Setting | DevOps (`devops`) | Documentation |
 |---|---|---|
-| Required approvals | 1 | 2 for `*_GUIDELINES.md`, otherwise 1 |
+| Required approvals | 1 | 0 (PR required; author may self-merge) |
 | Required status checks | `terraform fmt -check`, `terraform validate`, `terraform plan`, Conftest | markdown lint / link check (if configured) |
 | Block force pushes | ✅ Enabled | ✅ Enabled |
 | Allow deletions | ❌ Disabled | ❌ Disabled |
@@ -412,4 +412,4 @@ All deploy and rollback events must be posted to `#deployments` in Slack with th
 
 ---
 
-_Last updated: 2026-06-14. To propose a change, open a PR against this file and request review from at least two team members._
+_Last updated: 2026-06-14. To propose a change, open a PR against this file. The documentation repo requires no approvals to merge — review is encouraged but not enforced._
