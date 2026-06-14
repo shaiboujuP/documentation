@@ -180,6 +180,19 @@ jobs:
             }
 ```
 
+### 3.4 Frontend deploy — `website` (Vercel)
+
+The `website` repo is the one exception to the Docker → ECR → EKS model above: it is a static Vite site and deploys to **Vercel**, not Kubernetes. It still follows the same branch model and the same rule that GitHub Actions is the only deployer.
+
+| Environment | Branch | Vercel target |
+|---|---|---|
+| `sandbox` | `dev` | Preview deployment |
+| `production` | `master` | Production deployment |
+
+The deploy job runs the **prebuilt** flow inside GitHub Actions — `vercel pull` → `vercel build` → `vercel deploy --prebuilt` — rather than letting Vercel build remotely. This is required because Vite inlines `VITE_*` env vars (e.g. `VITE_PMF_API_URL`) at **build time**; building in CI keeps those values in scope so they land in the bundle.
+
+**Single deploy path.** Vercel's native Git integration would otherwise auto-deploy every push as well, producing two deployments per commit (one by `vercel[bot]`, one by CI) that race for the production alias. It is disabled in-repo via `git.deploymentEnabled: false` in `website/vercel.json`. That setting only suppresses commit-triggered deploys; the explicit `vercel deploy` calls in CI are unaffected. Do not re-enable Git auto-deploy or add a second deploy mechanism — CI is the single source of truth.
+
 ---
 
 ## 4. ECR & Image Tagging
@@ -399,4 +412,4 @@ All deploy and rollback events must be posted to `#deployments` in Slack with th
 
 ---
 
-_Last updated: 2026-06-11. To propose a change, open a PR against this file and request review from at least two team members._
+_Last updated: 2026-06-14. To propose a change, open a PR against this file and request review from at least two team members._
