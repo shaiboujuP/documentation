@@ -509,6 +509,12 @@ Rules:
 - **Cloudflare** for DNS (one CNAME per service pointing at the shared NLB). Per-service TLS certificates managed by cert-manager via the `letsencrypt-prod` ClusterIssuer.
 - HTTPS everywhere. HTTP redirects to HTTPS at the ingress.
 
+### Frontend deployment
+
+- **Application frontends deploy on k3s, not Vercel.** A web frontend (e.g. a Vite SPA) is built into a static bundle, baked into an nginx image, pushed to ECR, and served from the cluster behind the shared NLB + nginx-ingress — exactly like a backend service (image → ECR → k3s, §10). One platform, one TLS story (cert-manager), one CI/CD path for every product surface.
+  - Example: the **dashboard frontend** (`apps/dashboard-frontend` in the `dashboard` repo) → image `flokit-prod-dashboard-frontend`, namespace `dashboard-frontend`, host `dashboard.flokitai.com`. The app repo's CI builds + pushes the image and rolls the Deployment; the manifests live in `devops/k8s/dashboard-frontend`.
+- **Vercel is reserved for the public marketing `website` repo only.** It is a standalone static site (Vite + serverless contact form) with no place in the k3s backend stack — see [`Infrastructure/flokit_environment_hld.md`](./Infrastructure/flokit_environment_hld.md). It deploys via Vercel CI (`vercel build`/`deploy` with a `VERCEL_TOKEN`), with Vercel's own Git auto-deploy disabled (`git.deploymentEnabled: false`) so each push deploys exactly once. Do not put any other service on Vercel without an explicit product decision.
+
 ---
 
 ## 9. Infrastructure as Code
